@@ -15,11 +15,18 @@ PositionManager::PositionManager() {
     xCoord = 0x000000;
     yCoord = 0x000000;
     zCoord = 0x000000;
+    rotationCoord = 0x000000;
+    movementModeCoord = 0x000000;
+    maxFlySpeedCoord = 0x000000;
+    brakingDecelerationFlyingCoord = 0x000000;
+    jumpZVelocityCoord = 0x000000;
+    airControlCoord = 0x000000;
     xVelocityCoord = 0x000000;
     yVelocityCoord = 0x000000;
     zVelocityCoord = 0x000000;
     drakeDistSplineCoord = 0x000000;
     drakeMouvementCoord = 0x000000;
+    fpsCoord = 0x000000;
     x = 0.0;
     y = 0.0;
     z = 0.0;
@@ -29,13 +36,29 @@ PositionManager::PositionManager() {
     drakeDistSpline = 0.0;
     drakeMouvement = 1;
     DrakeInit = false;
+    flyHack = false;
+    fps = 60;
+    game_window = NULL;
+}
+
+int PositionManager::findGameWindow(){
+    // Trouve la fenêtre du jeu avec le nom "OnlyUP  " à l'aide de la fonction FindWindow.
+    game_window = FindWindow(NULL, L"OnlyUP  ");
+    // Vérifie si la fenêtre du jeu a été trouvée. Si ce n'est pas le cas, affiche un message d'erreur et termine le programme.
+    if (!game_window) {
+        return 1;
+    }
+    return 0;
+}
+
+HWND PositionManager::getGameWindow(){
+    findGameWindow();
+    return game_window;
 }
 
 int PositionManager::init() {
-    // Trouve la fenêtre du jeu avec le nom "OnlyUP  " à l'aide de la fonction FindWindow.
-    HWND game_window = FindWindow(NULL, L"OnlyUP  ");
-    // Vérifie si la fenêtre du jeu a été trouvée. Si ce n'est pas le cas, affiche un message d'erreur et termine le programme.
-    if (!game_window) {
+
+    if(findGameWindow()){
         // Affichage du message d'erreur dans une boîte de dialogue
         QMessageBox::critical(nullptr, "Erreur", "Impossible de trouver la fenêtre du jeu.");
         return 1;
@@ -72,7 +95,15 @@ int PositionManager::init() {
     // Initialisation des différentes zone mémoire du jeu.
     if(!initPos()){
         if(!initVelocity()){
-            return 0;
+            if(!initFps()){
+                float maxFlySpeed = 6000.f;
+                WriteProcessMemory(game_process, (void*)maxFlySpeedCoord, &maxFlySpeed, sizeof(maxFlySpeed), nullptr);
+                float brakingDecelerationFlying = 6000.f;
+                WriteProcessMemory(game_process, (void*)brakingDecelerationFlyingCoord, &brakingDecelerationFlying, sizeof(brakingDecelerationFlying), nullptr);
+                return 0;
+            }else{
+                return 1;
+            }
         }else{
             return 1;
         }
@@ -146,6 +177,8 @@ int PositionManager::initPos(){
     yCoord = current_address;
     current_address -= 0x8;
     xCoord = current_address;
+    current_address -= 0x78;
+    rotationCoord = current_address;
 
     return 0;
 }
@@ -221,6 +254,14 @@ int PositionManager::initVelocity(){
     yVelocityCoord = current_address;
     current_address -= 0x8;
     xVelocityCoord = current_address;
+    jumpZVelocityCoord = current_address + 0xC0;
+    current_address += 0xEC;
+    movementModeCoord = current_address;
+    current_address += 0x50;
+    maxFlySpeedCoord = current_address;
+    brakingDecelerationFlyingCoord = current_address + 0x28;
+    airControlCoord = current_address + 0x2C;
+
 
     return 0;
 }
@@ -296,6 +337,32 @@ int PositionManager::initDrake(){
     return 0;
 }
 
+int PositionManager::initFps(){
+    // Déclare une variable pour stocker l'adresse actuelle + ajoutez l'offset au début de l'adresse.
+    uintptr_t current_address = base_address + 0x0788DC58;
+
+    // Lit la mémoire du processus du jeu à l'adresse actuelle pour obtenir la prochaine adresse.
+    if (!ReadProcessMemory(game_process, (void*)current_address, &current_address, sizeof(current_address), nullptr)) {
+            // Affichage du message d'erreur dans une boîte de dialogue
+            QMessageBox::critical(nullptr, "Erreur", "Erreur lors de l'initialisation des fps #25");
+            return 1;
+    }
+
+    // Ajoute l'offset à l'adresse actuelle.
+    current_address += 0x48;
+
+    fpsCoord = current_address;
+
+    // Lit la mémoire du processus du jeu à l'adresse actuelle pour obtenir la valeur des fps.
+    if (!ReadProcessMemory(game_process, (void*)fpsCoord, &fps, sizeof(fps), nullptr)) {
+            // Affichage du message d'erreur dans une boîte de dialogue
+            QMessageBox::critical(nullptr, "Erreur", "Erreur lors de la lecture des fps #27");
+            return 1;
+    }
+
+    return 0;
+}
+
 void PositionManager::createPosition(const QString& name) {
     QJsonObject positionJson;
     positionJson["x"] = x;
@@ -316,9 +383,9 @@ void PositionManager::teleport(){
     WriteProcessMemory(game_process, (void*)yCoord, &y, sizeof(y), nullptr);
     WriteProcessMemory(game_process, (void*)zCoord, &z, sizeof(z), nullptr);
 
-    WriteProcessMemory(game_process, (void*)xVelocityCoord, &xV, sizeof(x), nullptr);
-    WriteProcessMemory(game_process, (void*)yVelocityCoord, &yV, sizeof(y), nullptr);
-    WriteProcessMemory(game_process, (void*)zVelocityCoord, &zV, sizeof(z), nullptr);
+    WriteProcessMemory(game_process, (void*)xVelocityCoord, &xV, sizeof(xV), nullptr);
+    WriteProcessMemory(game_process, (void*)yVelocityCoord, &yV, sizeof(yV), nullptr);
+    WriteProcessMemory(game_process, (void*)zVelocityCoord, &zV, sizeof(zV), nullptr);
 }
 
 void PositionManager::loadPos(){
@@ -501,3 +568,46 @@ void PositionManager::resetSpeedDrake(){
 
     WriteProcessMemory(game_process, (void*)drakeMouvementCoord, &drakeMouvement, sizeof(drakeMouvement), nullptr);
 }
+
+bool PositionManager::getFlyHack(){
+    return flyHack;
+}
+
+void PositionManager::setFlyHack(bool isFlyHack){
+    const unsigned char walkMode = 1;
+    const unsigned char flyMode = 5;
+    flyHack = isFlyHack;
+    if(isFlyHack){
+        WriteProcessMemory(game_process, (void*)movementModeCoord, &flyMode, sizeof(flyMode), nullptr);
+    }else{
+        WriteProcessMemory(game_process, (void*)movementModeCoord, &walkMode, sizeof(walkMode), nullptr);
+    }
+}
+
+void PositionManager::updateVelocity(double x, double y, double z) {
+    // Mettre à jour la vélocité
+    WriteProcessMemory(game_process, (void*)xVelocityCoord, &x, sizeof(x), nullptr);
+    WriteProcessMemory(game_process, (void*)yVelocityCoord, &y, sizeof(y), nullptr);
+    WriteProcessMemory(game_process, (void*)zVelocityCoord, &z, sizeof(z), nullptr);
+}
+
+float PositionManager::getFps(){
+    ReadProcessMemory(game_process, (void*)fpsCoord, &fps, sizeof(fps), nullptr);
+    return fps;
+}
+
+void PositionManager::setFps(float newFps){
+    fps = newFps;
+    WriteProcessMemory(game_process, (void*)fpsCoord, &fps, sizeof(fps), nullptr);
+}
+
+void PositionManager::setJumpZVelocity(bool bigJump){
+    const float initial = 420;
+    const float augmented = 2000;
+    if(bigJump){
+        WriteProcessMemory(game_process, (void*)jumpZVelocityCoord, &augmented, sizeof(augmented), nullptr);
+    }else{
+        WriteProcessMemory(game_process, (void*)jumpZVelocityCoord, &initial, sizeof(initial), nullptr);
+    }
+}
+

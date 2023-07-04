@@ -7,6 +7,24 @@
 #include <QFile>
 #include <QMessageBox>
 #include <QDebug>
+#include <Windows.h>
+
+bool isUserAdmin()
+{
+    BOOL isAdmin = FALSE;
+    SID_IDENTIFIER_AUTHORITY ntAuthority = SECURITY_NT_AUTHORITY;
+    PSID adminGroup;
+    if (AllocateAndInitializeSid(&ntAuthority, 2, SECURITY_BUILTIN_DOMAIN_RID,
+                                 DOMAIN_ALIAS_RID_ADMINS, 0, 0, 0, 0, 0, 0, &adminGroup))
+    {
+        if (!CheckTokenMembership(NULL, adminGroup, &isAdmin))
+        {
+            isAdmin = FALSE;
+        }
+        FreeSid(adminGroup);
+    }
+    return isAdmin == TRUE;
+}
 
 QTranslator translator;
 Config config("config.ini");
@@ -25,10 +43,10 @@ int main(int argc, char *argv[])
     QLocale locale;
     if (lang == "en") {
         locale = QLocale(QLocale::English, QLocale::UnitedKingdom);
-    } else if (lang == "fr") {
-        locale = QLocale(QLocale::French, QLocale::France);
     } else if (lang == "zh") {
         locale = QLocale(QLocale::Chinese, QLocale::China);
+    } else if (lang == "ja") {
+        locale = QLocale(QLocale::Japanese, QLocale::Japan);
     }
 
     const QString baseName = "OnlyUP_Trainer_" + locale.name();
@@ -36,6 +54,12 @@ int main(int argc, char *argv[])
         a.installTranslator(&translator);
     } else {
         qDebug() << "Failed to load translation:" << baseName;
+    }
+
+    if (!isUserAdmin())
+    {
+        QMessageBox::critical(nullptr, QObject::tr("Erreur"), QObject::tr("This program requires administrator privileges."));
+        return -1;
     }
 
     MainWindow w;
